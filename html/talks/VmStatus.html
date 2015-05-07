@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Statusoverview Perl VMs</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+    <style type="text/css">
+      /*@import url(https://fonts.googleapis.com/css?family=Yanone+Kaffeesatz);
+      @import url(https://fonts.googleapis.com/css?family=Droid+Serif:400,700,400italic);
+      @import url(https://fonts.googleapis.com/css?family=Ubuntu+Mono:400,700,400italic);*/
+
+      body { font-family: 'Droid Serif'; }
+      h1, h2, h3 {
+        font-family: 'Yanone Kaffeesatz';
+        font-weight: normal;
+      }
+      .remark-code, .remark-inline-code { font-family: 'Ubuntu Mono'; }
+    </style>
+  </head>
+  <body>
+    <textarea id="source">
+
+# ‎Statusuebersicht Perl VMs
+
+    German Perl Workshop, Dresden 7.5.2015
+    40 min
+    Reini Urban, cPanel
+
+From outside the perl world looks bad.
+
+*"In short, Perl 4 left the impression of spaghetti code,*
+
+*Perl 5 crippled object orientation,*
+
+*and Perl 6 received prominent vaporware awards and is too slow."* - Carrot
+
+---
+# Overview
+
+- Perl 5 did a feature freeze after Larry Wall left
+
+- is only doing maintenance
+
+- discussions on p5p are fruitless
+
+- features if implemented are one man shows
+
+- there is no technical lead anymore
+
+- no SW quality
+
+- and no management
+
+---
+# Overview
+
+Python, Ruby and PHP are of similar bad quality, but at least PHP got
+a huge boost lately after their second management team got competition
+in Facebook.
+
+PHP 7 looks really good, if you forget about the old sins.
+
+And Ruby is also doing much better. Started bad, but their superior design
+pays off now.
+
+---
+# "Modern Perl"
+
+Perl is post-modern by default, and people who
+called out the "Modern Perl" movement have no idea about
+Modernism.
+
+Modern Perl is even more post-modern than p5p perl.
+p5p perl is pretty modern actually.
+
+My sig:
+
+    Working towards a true Modern Perl.
+    Slim, functional, unbloated, compile-time optimizable.
+
+---
+
+# perl 5.22
+---
+# perl 5.22
+
+internal performance is up by 1.8. *(almost 2x faster!)*
+---
+# performance
+* new **multideref** (by *davem*)
+
+* not the new **op_signature** 30% (by *davem*)
+
+* but esp. **cached class pointers** (by *syber@crazypanda.ru*)
+
+  compile-time known class and method names are now
+  pre-initialized into the class cache.
+  SUPER::new is now parsed at compile-time.
+---
+# performance
+* in @array = split the assignment can now be almost always optimized away.
+
+* lots of more such lvalue assignment optimizations with other ops. (but still buggy
+  in corner cases)
+
+* NV (double numbers) can now be stored in the head only, no need for a seperate body.
+
+* -fstack-protector-strong as new default made perl slower, and the added
+  security is questionable.
+
+* empty sub bodies containing only undef are now "inlined"
+
+* non-utf8, non-magic length is now 20% faster
+
+---
+# features
+* Unicode 7.0
+
+* UNIVERSAL->import (e.g. use UNIVERSAL '...') is now fatal.
+  This was deprecated for a while.
+  This affects isa, can, VERSION. _perldoc UNIVERSAL_
+
+* lots of fixes for NaN, Inf and locale dependent. NaN handling is now pretty good,
+  when supported by the system.
+
+* use re 'strict'
+---
+# features
+
+* **use warnings 'all"** is not all anymore, added more warnings via extra, all is now everything.
+  used for controversial warnings: grep in void context.
+
+  Interestingly I wrote the same patch for some preloaded registered modules,
+  but backed out some months ago. Now it's in. 
+  *(My warnings are compiled into a extendable read-only hash in a shared library)*
+
+* new optional OP\_PARENT, op\_sibling and op\_lastsib is gone. 
+  rewritten pad API (again).
+  actually the pad API and OP_PARENT are all very good things.
+---
+# syntax
+
+* `<<>>` treats the @ARGV name as literal, same as the 3 argument open.
+
+  that means `<>` was not fixed to ignore shellchars in filenames.
+  ```
+  push @ARGV, "|foo";
+  while (<>)
+  ```
+  same as 2 arg open was also never fixed.
+  ```
+  my $fn = shift;
+  open my $fh, $fn;
+  ```
+  instead opted for a new API, to keep the errors/features backcompat.
+
+  perl5 is still a security minefield.
+---
+# syntax
+* new refaliasing
+
+  the lhs of an alias may now be a reference, and is
+  automatically dereferenced:
+
+  ```
+    \$c = \$d;
+    foreach \%hash (@array_of_hash_refs) { ... keys %hash }
+  ```
+---
+# syntax
+* new bitwise string operators (but still buggy)
+* sub signatures parsed before attributes.
+* defined(@array) and defined(%hash) are now fatal, but defined(@array = list) not.
+* literal { needs to escaped in a regex (*lots of new warnings*)
+* prefer subs over barewords with the * prototype
+---
+# syntax
+* constant inlining of sub () { $var } may now throw deprecation
+  warnings when the $var refers to a closed over variable, and a
+  side-effect to change $var was ignored or not detected.  It
+  produces however still wrong code.
+
+  ```
+    sub make_constant {
+        my $var = shift;
+        return sub () { $var }; # fine
+    }
+    sub make_constant_deprecated {
+        my $var;
+        $var = shift;
+        return sub () { $var }; # deprecated
+    }
+    sub make_constant_deprecated2 {
+        my $var = shift;
+        change($var);           # could modify $var
+        return sub () { $var }; # deprecated
+    }
+   ```
+---
+## problems
+_(only a very tiny outline)_
+
+**signatures** are still not acceptable:
+
+* no types support 
+  _(a 4 lines patch)_
+* no call-by-ref 
+  _(around 20 lines, but needs OP\_SIGNATURE restructuring which was not done in 5.22)_
+* still copying the values to @\_ even when not needed, not using MARK yet as in the ops.
+* too slow arity check at run-time. nothing done at compile-time.
+* only primitive optimizations possible. (_empty bodies_)
+* not merged with old protoypes syntax. need now to announce it as experimental,
+  turn off the experimental warnings, even if not necessary,
+  which disables old prototypes syntax. this was not the plan.
+---
+## problems
+
+Nested subs and lexical values in subs are still not compiled properly
+in corner cases.
+
+still huge pure-perl hashes: unicode, config, warnings.
+
+many critical modules still sourced, not builtin. 
+
+the trend is even going into the opposite direction.
+more deps, more bloat, more external modules.
+
+---
+## problems
+
+regex compiler still a mine-field (e.g. ops via longjmp).
+
+still not using non-backtracking optimizations (DFA re2),
+even when they have to parse the regex in step 1.
+
+still not using dynamic compilation,
+
+i.e. two pass compilation: 1st for size and 2nd for the ops.
+
+PCRE has a jit in the meantime.
+
+---
+## problems
+
+silly new double readonly system.
+
+silly old slow hash table,
+
+new, slower hash function implementations. _(discussions fruitless)_
+
+---
+## problems
+
+horrible old parser and new syntax extension API. 
+
+_when they could use the parser, they rather add new spagetti functions instead._
+
+_the newer the code the more the horror_
+
+---
+## problems
+
+horrible old parser and new syntax extension API. 
+
+_when they could use the parser, they rather add new spagetti functions instead._
+
+_the newer the code the more the horror_
+
+highlights: warnings, version objects, cow, op_signature.
+
+---
+## problems
+
+With p5p no progress is possible, only bugfixes.
+
+They are basically just maintaining the status quo, and even that not properly.
+
+Most bugs are not getting fixed. 
+
+---
+## problems
+
+The only possible successful workflow is to ignore p5p and do it by
+yourself.
+
+---
+## problems
+
+The only possible successful workflow is to ignore p5p and do it by
+yourself.
+
+And that's what they are doing.
+
+---
+# parrot
+
+Basically the similar management problems as p5p after the core
+developers left after excessive infighting. 
+
+Then, from 1.0 to 4.6 only destruction being done, much worse than the
+infighting before.
+
+But SW management tools and policies are still much better than in
+perl5.
+
+---
+# parrot
+
+Superior **threads** architecture. 
+
+Only owner may write, the compiler automatically knows the owning
+thread and assigns proxy objects to accessing threads. 
+
+So it's basically lockless for all object types. Scales linear with
+avail. CPU's.
+
+Writes are done via prioritized deferred writer tasks in the owner thread.
+
+---
+# parrot
+
+parrot performance is still terrible, but this is fixable.
+
+It was fast before some people decided to destroy performance and
+compatibility, for aesthetic reasons and lack of competence and management.
+
+---
+# parrot
+
+![](parrot-bench-20150121.png)
+
+---
+# parrot
+
+TODO:
+
+* fix win64 msvc
+
+* the calling convention/runloop slowdown (20% perf win), 
+
+* fixing string compacting GC (20% perf win),
+
+* and the jit (100% perf win).
+
+About 6 month work, but I stepped back again after the parrot/perl6
+fiasco(*), working on our perl5 project now.
+
+---
+# MoarVM
+
+The MoarVM project has my full sympathy as some parrot devs just had
+no idea what they were doing, and it only got worse.
+Jonathan did almost everything right.
+
+Got stable and incredibly fast, even with a good optimizing jit now.
+Working on NFG and the great list refactor now.
+
+---
+# MoarVM
+
+However misses most of the old parrot SW quality infrastructure.
+Tons of compiler warnings, wouldn't trust -O3.
+
+Not buildable on macports, e.g.
+---
+# perl 6
+
+Looks good.
+
+Will go 1.0 end of this year
+
+It already is out of beta and IMHO production ready for quite some
+time, but they decided to rework list comprehension and enable unicode
+normalization (NFG) in the remaining months.
+
+---
+# perl 6
+
+_the "fiasco"_
+
+dropped parrot support with an dumb excuse (NFG)
+
+so you will not get lock-less threading on the vm level, you need to
+trust the libraries. (Future, Promises)
+
+also support for much less architectures now.
+
+???
+
+parrot support was discontinued for not understandable reasons. the
+cited reasons were bogus and never reported.  there was no ticket, so
+we never knew, prioritization could not be done and when we heard
+about it, it was already too late for them.  apparently nobody but
+froggs wants to work on the parrot backend.  you will not care, but
+you should if you care about multithreaded performance.  moar and jvm
+do not help there.
+
+Technically cited was lack of Unicode NFG support, but no other VM has
+NFG support either, and with parrot it's much more trivial to use the
+existing icu Normalization2 API, which moar has to do now manually.
+
+---
+# Alternative VM's
+
+_Remember: Compare this to the healthy state of other dynamic languages VM's:
+php, ruby, python, javascript, lua_
+
+---
+# p2
+
+p2 was my perl11 project to use a good small dynamic vm, potion written by
+why the lucky stiff, to use as perl5 and perl6 backend. _(or ruby)_
+
+Basically a lua variant with objects, and a simplier jit.
+
+The features were already better than moarvm and parrot and of course
+the old perl5 vm.
+
+---
+# p2
+
+p2 was my perl11 project to use a good small dynamic vm, potion written by
+why the lucky stiff, to use as perl5 and perl6 backend. _(or ruby)_
+
+Basically a lua variant with objects, and a simplier jit.
+
+The features were already better than moarvm and parrot and of course
+the old perl5 vm.
+
+Function calls are 200x faster, nice jit, full dynamic MOP in under 10k LOC. 
+E.g. I implemented BEGIN block support in one line of code.
+
+---
+# p2
+
+In the last year I started adding a debugger, compiler framework, ffi,
+unsafe fast arrays, numeric tower fixes and type support, but got
+frustrated with the not yet GC-safe parser, complete lack of interest
+(or competence), and strange performance characteristics in some
+benchmarks.
+
+---
+# p2
+
+TODO:
+* gc-safe parser
+* threads
+* perl5 and perl6 library methods
+* fill the perl6 parser with actions
+
+---
+# tvmjit
+
+Francois Perrad's luajit variant with s-expressions.
+
+He has a working nqp, with the perl6 mop.
+
+Has a language client already.
+
+---
+# gperl
+
+gperl is a llvm backed parser and jitted runtime by **gocchi** from Japan.
+Even faster than p2.
+
+He still has a mind-blocking bug in the parser with eval, and stepped
+back to work on the submodules. Lexer, Parser, Compiler.
+
+???
+His english is not really good.
+
+---
+# rperl
+
+It is a **restricted perl**, which favors **typed**, **no-magic** data
+structures, which can be compiled to pure **C++ stdlib** structures, and
+some operations on those are therefore as fast as possible.
+
+It has it's own (*new*) parser for the extended syntax, and can
+fallback from C++ ops to normal dynamic perl ops. 
+
+Standalone it is already usable, which is a major accomplishment.
+
+---
+# perl11
+
+The further plan is to compile modules into shared libs and use such compiled libs,
+compiled with
+
+* the standard and stable B::C , but during run-time not faster, fully dynamic perl5 vm,
+* type optimized B::CC libraries, unrolled runloop, most ops optimized.
+* type optimized rperl compiled into C++.
+via perlcc and a new buildcc tool to manage the dependencies.
+
+---
+# compiler
+
+e.g. with cPanel a typical binary is 50MB, has 200 modules
+dependencies, has almost zero startup-time(*), perl5 bound run-time,
+and again almost zero destruction-time.
+
+most modules are already compiled in (i.e. just mapped into the
+process space, even if not used), shared libs are loaded at startup.
+only some bigger modules not constanty used are run-time loaded from
+source, not yet via `.pmc`.
+
+---
+# Questions
+
+    </textarea>
+    <script src="remark.js" type="text/javascript">
+    <!-- script src="https://gnab.github.io/remark/downloads/remark-latest.min.js" -->
+    </script>
+    <script type="text/javascript">
+      var slideshow = remark.create();
+    </script>
+  </body>
+</html>      
